@@ -20,6 +20,10 @@
 
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
+
+  <!-- Carga previa de Supabase SDK y SheetJS directamente en el HEAD para evitar carreras de carga -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div id="offline-banner" class="offline-banner" role="status" hidden>
@@ -40,9 +44,7 @@
     <p style="padding:1rem">Esta aplicación necesita JavaScript activado para funcionar.</p>
   </noscript>
 
-  <script defer
-          src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
-          onerror="window.__supabaseFailed = true"></script>
-  <script type="module" src="js/app.js"></script>
+  <!-- Módulo principal de la aplicación -->
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>
