@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Entrenador PWA</title>
+  <meta name="description" content="Aplicación de entrenamiento personal para entrenador y clientes">
+
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Entrenador">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div id="offline-banner" class="offline-banner" role="status" hidden>
+    Sin conexión. Puedes ver lo ya cargado; los cambios se guardarán al reconectar.
+  </div>
+
+  <main id="app" aria-live="polite">
+    <div class="splash">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Cargando…</p>
+    </div>
+  </main>
+
+  <nav id="tabbar" class="tabbar" aria-label="Navegación principal" hidden></nav>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <p style="padding:1rem">Esta aplicación necesita JavaScript activado para funcionar.</p>
+  </noscript>
+
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
+          onerror="window.__supabaseFailed = true"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
