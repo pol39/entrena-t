@@ -1,0 +1,101 @@
+/* ===== Variables: tema claro por defecto, oscuro automático ===== */
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs-sm: .875rem; --fs-base: 1rem; --fs-lg: 1.25rem; --fs-xl: 1.75rem; --fs-xxl: 2.5rem;
+  --s1: .25rem; --s2: .5rem; --s3: .75rem; --s4: 1rem; --s5: 1.5rem; --s6: 2rem; --s7: 3rem;
+  --r-sm: 8px; --r-md: 14px; --r-lg: 24px; --r-pill: 999px;
+  --tap: 3rem; --tap-lg: 3.5rem; --tabbar-h: 3.5rem;
+
+  --bg: #F1F4F7; --surface: #FFFFFF; --surface-2: #E4EAF0;
+  --line: #D3DCE5; --line-strong: #7A8FA3;
+  --text: #14202B; --muted: #4F6070;
+  --accent: #1F4FD8; --accent-ink: #FFFFFF;
+  --ok: #137A52; --ok-ink: #FFFFFF; --ok-bg: #DDF3E8;
+  --warn: #8A5200; --warn-bg: #FCEBCB;
+  --danger: #B3261E; --danger-bg: #FADDDA;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0E141B; --surface: #17202A; --surface-2: #212C38;
+    --line: #2C3947; --line-strong: #5B6E80;
+    --text: #EAF0F5; --muted: #9AABBB;
+    --accent: #7FA0FF; --accent-ink: #0B1220;
+    --ok: #5FD3A1; --ok-ink: #06281C; --ok-bg: #12392B;
+    --warn: #F2B955; --warn-bg: #3A2B0D;
+    --danger: #FF8A80; --danger-bg: #3D1714;
+  }
+}
+
+/* ===== Reset y base ===== */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; color-scheme: light dark; }
+body {
+  margin: 0; min-height: 100dvh;
+  background: var(--bg); color: var(--text);
+  font: 400 var(--fs-base)/1.5 var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+img, video { max-width: 100%; display: block; }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ===== Contenedor principal ===== */
+#app {
+  max-width: 40rem; margin: 0 auto;
+  padding: calc(var(--s4) + env(safe-area-inset-top)) var(--s4)
+           calc(var(--s6) + env(safe-area-inset-bottom));
+}
+#app.wide { max-width: 64rem; }
+body:has(#tabbar:not([hidden])) #app {
+  padding-bottom: calc(var(--tabbar-h) + var(--s6) + env(safe-area-inset-bottom));
+}
+
+/* ===== Tipografía ===== */
+h1, h2, h3 { margin: 0 0 var(--s3); line-height: 1.15; }
+h1 { font-size: var(--fs-xl); font-weight: 800; letter-spacing: -.02em; }
+h2 { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -.01em; }
+h3 { font-size: var(--fs-base); font-weight: 700; }
+p { margin: 0 0 var(--s3); max-width: 70ch; }
+.muted { color: var(--muted); }
+.small { font-size: var(--fs-sm); }
+.num { font-variant-numeric: tabular-nums; }
+.center { text-align: center; }
+
+/* ===== Utilidades de layout ===== */
+.stack { display: flex; flex-direction: column; gap: var(--s3); }
+.stack-lg { display: flex; flex-direction: column; gap: var(--s5); }
+.row { display: flex; align-items: center; gap: var(--s3); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.grow { flex: 1; min-width: 0; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ===== Botones (zona de toque mínima 48px) ===== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  min-height: var(--tap); padding: 0 var(--s5);
+  border: 2px solid transparent; border-radius: var(--r-md);
+  background: var(--accent); color: var(--accent-ink);
+  font: 700 var(--fs-base)/1 var(--font); text-decoration: none;
+  cursor: pointer; touch-action: manipulation; user-select: none;
+  transition: background-color .15s, transform .1s;
+}
+.btn:active { transform: scale(.97); }
+.btn-secondary { background: var(--surface-2); color: var(--text); }
+.btn-ghost { background: transparent; color: var(--accent); }
+.btn-danger { background: var(--danger); color: var(--surface); }
+.btn-block { width: 100%; }
+.btn-lg { min-height: var(--tap-lg); font-size: var(--fs-lg); }
+.btn-icon { padding: 0; width: var(--tap); }
+.btn[disabled], .btn[aria-busy="true"] { opacity: .55; cursor: not-allowed; transform: none; }
+
+/* ===== Accesibilidad: movimiento reducido ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
