@@ -1,5 +1,6 @@
-import { configOk, sb } from './supabaseClient.js';
-import { $, render, esc, toast, setBusy, renderNotice, friendlyError } from './ui.js';
+import { parseExcel } from './excelParser.js';
+import { configOk } from './supabaseClient.js';
+import { $, render, esc, renderNotice, friendlyError } from './ui.js';
 import { getSession, loadProfile, signOut, needsConsent } from './auth.js';
 import { showWelcome } from './welcome.js';
 import { showConsent } from './consent.js';
