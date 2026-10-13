@@ -2,10 +2,10 @@ import { parseExcel } from './excelParser.js';
 import { configOk } from './supabaseClient.js';
 import { $, render, esc, renderNotice, friendlyError } from './ui.js';
 import { getSession, loadProfile, signOut, needsConsent } from './auth.js';
-import { showWelcome } from './welcome.js';
-import { showConsent } from './consent.js';
-import { showImportPlan } from './importPlan.js';
-import { savePlan } from './plans.js';
+import { showWelcome } from './views/welcome.js';
+import { showConsent } from './views/consent.js';
+import { showImportPlan } from './views/importPlan.js';
+import { savePlan } from './views/plans.js';
 
 // ---------- Consultas del panel ----------
 async function listClients(trainerId) {
