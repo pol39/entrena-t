@@ -1,4 +1,4 @@
-import { sb } from './supabaseClient.js';
+import { sb } from '../supabaseClient.js';
 
 // Guarda un plan importado desde Excel como BORRADOR.
 // Supabase no permite una transacción desde el navegador, así que si algo falla a mitad
