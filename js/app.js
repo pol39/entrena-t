@@ -1,4 +1,4 @@
-import { parseExcel } from './excelParser.js';
+import { parseExcelFile } from './excelParser.js';
 import { configOk } from './supabaseClient.js';
 import { $, render, esc, renderNotice, friendlyError } from './ui.js';
 import { getSession, loadProfile, signOut, needsConsent } from './auth.js';
