@@ -1,6 +1,6 @@
-import { render, $, esc, toast, setBusy, friendlyError } from '../ui.js';
-import { acceptGdpr } from '../auth.js';
-import { APP_NAME, CONTACT_EMAIL, GDPR_VERSION } from '../config.js';
+import { render, $, esc, toast, setBusy, friendlyError } from './ui.js';
+import { acceptGdpr } from './auth.js';
+import { APP_NAME, CONTACT_EMAIL, GDPR_VERSION } from './config.js';
 
 // TEXTO MODELO: debe revisarlo un profesional legal antes de usar la app con clientes reales.
 export function showConsent(profile, onAccepted, onLogout) {
