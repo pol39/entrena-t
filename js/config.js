@@ -5,4 +5,4 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 export const APP_NAME = 'Entrenador PWA';
 export const CONTACT_EMAIL = 'pol.m.maresma.2004@gmail.com'; // responsable del tratamiento
-export const GDPR_VERSION = '1.0'; // sube a '1.1' si cambias la política: se volverá a pedir aceptación
+export const GDPR_VERSION = '1.0.1'; // sube a '1.1' si cambias la política: se volverá a pedir aceptación
