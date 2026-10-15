@@ -64,7 +64,7 @@ async function route() {
           'Tu entrenador debe registrar el consentimiento de tu madre, padre o tutor antes de que puedas acceder.',
           'Salir', logout);
       }
-      return showClientHome(profile);
+      return (await import('./clientApp.js')).showClientApp(profile, { onLogout: logout });
     }
     showTrainerHome(profile);
   } catch (err) {
