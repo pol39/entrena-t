@@ -4,7 +4,7 @@ import { getSession, loadProfile, signOut, needsConsent } from './auth.js';
 import { showWelcome } from './welcome.js';
 import { showConsent } from './consent.js';
 import { showImportPlan } from './importPlan.js';
-import { savePlan } from './plans.js';
+import { savePlan, listClientPlans, setPlanStatus, deletePlan } from './plans.js';
 
 // ---------- Consultas del panel ----------
 async function listClients(trainerId) {
@@ -72,7 +72,7 @@ async function route() {
   }
 }
 
-// ---------- Pantalla provisional del cliente (se sustituirá en la próxima fase) ----------
+// ---------- Pantalla provisional del cliente (se sustituirá en el siguiente paso) ----------
 function showClientHome(profile) {
   render(`
     <section class="stack-lg">
@@ -87,15 +87,39 @@ function showClientHome(profile) {
 }
 
 // ---------- Panel del entrenador ----------
+const PLAN_STATUS = {
+  draft: ['Borrador', 'badge-warn'],
+  active: ['Activo', 'badge-ok'],
+  archived: ['Archivado', '']
+};
+
 async function showTrainerHome(profile) {
   render('<div class="splash"><div class="spinner" aria-hidden="true"></div><p>Cargando panel…</p></div>');
 
-  let clients, invites;
+  let clients, invites, plansByClient;
   try {
     [clients, invites] = await Promise.all([listClients(profile.id), listPendingInvites(profile.id)]);
+    const lists = await Promise.all(clients.map((c) => listClientPlans(c.id)));
+    plansByClient = new Map(clients.map((c, i) => [c.id, lists[i]]));
   } catch (err) {
     return renderNotice('No se pudo cargar el panel', friendlyError(err), 'Reintentar', () => showTrainerHome(profile));
   }
+
+  const planRow = (p, c) => {
+    const [label, cls] = PLAN_STATUS[p.status] || [p.status, ''];
+    const btn = (action, text, kind) => `<button class="btn ${kind}" type="button" data-plan-action="${action}" data-plan="${esc(p.id)}" data-client="${esc(c.id)}">${text}</button>`;
+    return `
+      <div class="stack">
+        <div class="row-between">
+          <div class="grow">${esc(p.name)}</div>
+          <span class="badge ${cls}">${label}</span>
+        </div>
+        <div class="row">
+          ${p.status === 'active' ? btn('archive', 'Archivar', 'btn-secondary') : btn('activate', 'Activar', '')}
+          ${p.status === 'active' ? '' : btn('delete', 'Borrar', 'btn-ghost')}
+        </div>
+      </div>`;
+  };
 
   const clientRow = (c) => {
     const noGdpr = !c.gdpr_accepted_at;
@@ -103,17 +127,23 @@ async function showTrainerHome(profile) {
     const badge = noGdpr ? '<span class="badge badge-warn">Sin aceptar RGPD</span>'
       : needsGuardian ? '<span class="badge badge-warn">Falta tutor</span>'
       : '<span class="badge badge-ok">Activo</span>';
+    const plans = plansByClient.get(c.id) || [];
+    const noActive = plans.length > 0 && !plans.some((p) => p.status === 'active');
     return `
-      <li class="list-item">
-        <div class="grow stack">
-          <div>
+      <div class="card stack">
+        <div class="row-between">
+          <div class="grow">
             <div>${esc(c.full_name || c.email)}${c.is_minor ? ' <span class="badge">Menor</span>' : ''}</div>
             <div class="muted small">${esc(c.email)}</div>
           </div>
-          ${needsGuardian ? `<button class="btn btn-secondary" type="button" data-guardian="${esc(c.id)}">Registrar consentimiento del tutor</button>` : ''}
+          ${badge}
         </div>
-        ${badge}
-      </li>`;
+        ${needsGuardian ? `<button class="btn btn-secondary" type="button" data-guardian="${esc(c.id)}">Registrar consentimiento del tutor</button>` : ''}
+        ${noActive ? '<div class="alert alert-warn small">Este cliente no ve ningún plan todavía: activa uno.</div>' : ''}
+        ${plans.length
+          ? plans.map((p) => planRow(p, c)).join('')
+          : '<p class="muted small">Sin planes. Impórtalo con el botón de arriba.</p>'}
+      </div>`;
   };
 
   const app = render(`
@@ -128,7 +158,7 @@ async function showTrainerHome(profile) {
       <div class="stack">
         <h2>Clientes</h2>
         ${clients.length
-          ? `<div class="card"><ul class="list">${clients.map(clientRow).join('')}</ul></div>`
+          ? clients.map(clientRow).join('')
           : '<div class="empty"><p>Aún no tienes clientes vinculados. Invita al primero con el formulario de abajo.</p></div>'}
       </div>
 
@@ -163,6 +193,28 @@ async function showTrainerHome(profile) {
 
   $('#logout').onclick = logout;
   $('#import').onclick = () => openImport(profile);
+
+  app.querySelectorAll('[data-plan-action]').forEach((btn) => {
+    btn.onclick = async () => {
+      const { planAction, plan, client } = btn.dataset;
+      if (planAction === 'delete' && !confirm('¿Borrar este plan con todo su contenido? No se puede deshacer.')) return;
+      setBusy(btn, true);
+      try {
+        if (planAction === 'delete') {
+          await deletePlan(plan);
+          toast('Plan borrado.', 'ok');
+        } else {
+          const status = planAction === 'activate' ? 'active' : 'archived';
+          await setPlanStatus({ planId: plan, clientId: client, status });
+          toast(status === 'active' ? 'Plan activado: el cliente ya lo ve.' : 'Plan archivado.', 'ok');
+        }
+        showTrainerHome(profile);
+      } catch (err) {
+        toast(friendlyError(err), 'error');
+        setBusy(btn, false);
+      }
+    };
+  });
 
   $('#invite-form').onsubmit = async (e) => {
     e.preventDefault();
