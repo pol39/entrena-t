@@ -107,7 +107,7 @@ export async function deletePlan(planId) {
 // o null si el cliente no tiene ningún plan activo.
 export async function loadActivePlan(clientId) {
   const { data, error } = await sb.from('plans')
-    .select(`id, name, description, start_date, end_date,
+        .select(`*,
       sessions ( id, week_number, day_number, title, notes, sort_order,
         session_exercises ( id, exercise_id, exercise_name, sets, reps, rest_seconds, rpe, tempo, notes, sort_order,
           exercise:exercises ( description, video_path ) ) ),
