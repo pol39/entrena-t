@@ -107,11 +107,11 @@ export async function deletePlan(planId) {
 // o null si el cliente no tiene ningún plan activo.
 export async function loadActivePlan(clientId) {
   const { data, error } = await sb.from('plans')
-        .select(`*,
-      sessions ( id, week_number, day_number, title, notes, sort_order,
-        session_exercises ( id, exercise_id, exercise_name, sets, reps, rest_seconds, rpe, tempo, notes, sort_order,
+    .select(`*,
+      sessions ( *,
+        session_exercises ( *,
           exercise:exercises ( description, video_path ) ) ),
-      habits_nutrition ( id, category, title, content, frequency, sort_order )`)
+      habits_nutrition ( * )`)
     .eq('client_id', clientId)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
@@ -122,7 +122,7 @@ export async function loadActivePlan(clientId) {
 
   const bySort = (a, b) => a.sort_order - b.sort_order;
   data.sessions = (data.sessions || [])
-    .sort((a, b) => a.week_number - b.week_number || a.day_number - b.day_number || bySort(a, b));
+    .sort((a, b) => a.week_number - b.week_number || (a.day_number ?? 8) - (b.day_number ?? 8) || bySort(a, b));
   data.sessions.forEach((s) => { s.session_exercises = (s.session_exercises || []).sort(bySort); });
   data.habits_nutrition = (data.habits_nutrition || []).sort(bySort);
   return data;
