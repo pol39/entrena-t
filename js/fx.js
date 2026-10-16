@@ -11,9 +11,10 @@ export function countUp(el, to, { from = 0, duration = 900, format = (n) => Stri
   const token = {};
   el.__fx = token;
   if (reduced() || from === to || typeof requestAnimationFrame !== 'function') { el.textContent = format(to); return; }
-  const t0 = performance.now();
+  let t0;
   const step = (now) => {
     if (el.__fx !== token) return;
+    t0 ??= now;
     const p = Math.min((now - t0) / duration, 1);
     el.textContent = format(from + (to - from) * (1 - (1 - p) ** 3));
     if (p < 1) requestAnimationFrame(step);

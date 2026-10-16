@@ -72,6 +72,9 @@ function mountTabs(ctx) {
 
 async function navigate(ctx, id) {
   const tab = TABS.find((t) => t.id === id) || TABS[0];
+  const from = TABS.findIndex((t) => t.id === ctx.tab);
+  const to = TABS.indexOf(tab);
+  const slide = from === to || from < 0 ? '' : (to > from ? 'slide-r' : 'slide-l');
   ctx.tab = tab.id;
   document.querySelectorAll('#tabbar [data-tab]').forEach((b) => {
     if (b.dataset.tab === tab.id) b.setAttribute('aria-current', 'page');
@@ -85,6 +88,14 @@ async function navigate(ctx, id) {
   let mod = null;
   try { mod = await import(tab.view); } catch { /* el archivo de la pantalla aún no existe */ }
   if (token !== ctx.nav) return;
+
+  if (slide) {
+    const app = $('#app');
+    app.classList.remove('slide-r', 'slide-l');
+    void app.offsetWidth; // reinicia la animación
+    app.classList.add(slide);
+    app.addEventListener('animationend', () => app.classList.remove('slide-r', 'slide-l'), { once: true });
+  }
 
   try {
     if (mod?.mount) await mod.mount(ctx);
