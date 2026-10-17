@@ -6,9 +6,13 @@ export const fmtKg = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
 // ---------- Biblioteca y vídeos ----------
-export async function listExerciseInfo(ids) {
-  if (!ids.length) return [];
-  return must(await sb.from('exercises').select('id, description, video_path, muscle_group').in('id', ids));
+// Biblioteca del entrenador (el cliente solo ve la de su entrenador; lo limita RLS)
+export async function listLibrary() {
+  return must(await sb.from('exercises').select('id, name, description, video_path, muscle_group'));
+}
+
+export async function saveBodyWeight(clientId, kg) {
+  must(await sb.from('profiles').update({ body_weight_kg: kg }).eq('id', clientId));
 }
 
 export async function signedVideoUrl(path) {
@@ -87,7 +91,7 @@ export async function saveCompletion({ clientId, sessionId, totalVolume, note })
 export async function listPlanLogs(clientId, sessionIds) {
   if (!sessionIds.length) return [];
   return must(await sb.from('workout_logs')
-    .select('week_number, weight_kg, reps_done, rir_actual, session_id, session_exercises(exercise_name)')
+    .select('week_number, weight_kg, reps_done, rir_actual, session_id, session_exercise_id, session_exercises(exercise_name)')
     .eq('client_id', clientId).in('session_id', sessionIds));
 }
 

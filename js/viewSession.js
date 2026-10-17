@@ -1,5 +1,7 @@
 import { render, esc, toast, friendlyError } from './ui.js';
 import * as D from './clientData.js';
+import { startRest, parseRest, haptic, sparkBurst, celebrate, stopRest, countUp } from './fx.js';
+import { metricOf, METRIC_UI, tally, tallyText, normName, weekSessions } from './metrics.js';
 
 const LOGGED = new Set(['principal', 'final']);
 const BLOCKS = [['calentamiento', 'Calentamiento'], ['principal', ''], ['cardio', 'Cardio'], ['final', 'Para terminar']];
@@ -16,8 +18,16 @@ const opts = (from, to, cur) => ['<option value="">—</option>',
   ...Array.from({ length: to - from + 1 }, (_, i) => from + i)
     .map((n) => `<option value="${n}"${String(cur) === String(n) ? ' selected' : ''}>${n}</option>`)].join('');
 
+const QUICK = `<div class="quick" role="group" aria-label="Ajuste rápido de peso de las series pendientes">
+  <button type="button" data-adj="-2.5">−2,5</button><button type="button" data-adj="-1">−1</button><button type="button" data-adj="1">+1</button><button type="button" data-adj="2.5">+2,5</button></div>
+  <p class="muted small">Ajuste rápido del peso (kg) en las series pendientes</p>`;
+
 function videoHtml(src) {
-  if (!src) return '<div class="video-wrap"><div class="video-missing">Este ejercicio aún no tiene vídeo.</div></div>';
+  if (!src) {
+    return `<div class="video-wrap"><div class="video-missing">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 20v8M40 20v8M14 14v20M34 14v20M14 24h20"/></svg>
+      <span>Próximamente: vídeo demostrativo</span></div></div>`;
+  }
   if (/\.(mp4|webm|mov)(\?|$)/i.test(src)) {
     return `<div class="video-wrap"><video src="${esc(src)}" controls playsinline preload="metadata"></video></div>`;
   }
@@ -25,7 +35,7 @@ function videoHtml(src) {
 }
 
 export async function mount(ctx) {
-  const list = ctx.plan.sessions.filter((s) => s.week_number === ctx.week && s.kind !== 'descanso');
+  const list = weekSessions(ctx);
   if (!list.length) {
     render('<section class="stack-lg"><h1>Sesión</h1><div class="empty"><p>No hay sesiones programadas esta semana.</p></div></section>');
     return;
@@ -40,18 +50,23 @@ export async function mount(ctx) {
     D.listSessionLogs(ctx.clientId, ids),
     D.listLastLogs(ctx.clientId, [...new Set(logged.map((e) => e.exercise_name))], ids),
     D.getCompletion(ctx.clientId, session.id),
-    D.listExerciseInfo([...new Set(exs.map((e) => e.exercise_id).filter(Boolean))]),
+    D.listLibrary(),
     D.listCompletions(ctx.clientId, list.map((s) => s.id))
   ]);
 
   const libById = new Map(lib.map((l) => [l.id, l]));
+  const libByName = new Map(lib.map((l) => [normName(l.name), l]));
+  const libOf = (e) => libById.get(e.exercise_id) || libByName.get(normName(e.exercise_name));
   const videos = new Map();
   await Promise.all(exs.map(async (e) => {
-    const path = libById.get(e.exercise_id)?.video_path;
+    const path = libOf(e)?.video_path;
     videos.set(e.id, safeUrl(e.video_url) || (path ? await D.signedVideoUrl(path) : null));
   }));
 
   const ro = ctx.mode === 'trainer';
+  const bw = Number(ctx.profile.body_weight_kg) || null;
+  const metricById = new Map(logged.map((e) => [e.id, metricOf(e)]));
+  const needBw = !bw && [...metricById.values()].some((m) => m === 'bodyweight' || m === 'assisted');
   const doneSessions = new Set(doneRows.map((r) => r.session_id));
   const byId = new Map(logged.map((e) => [e.id, e]));
   const sets = new Map(ids.map((id) => [id, new Map()]));
@@ -68,11 +83,12 @@ export async function mount(ctx) {
   }
 
   const setsOf = (e) => e.sets || 3;
-  const volume = () => {
-    let t = 0;
-    for (const m of sets.values()) for (const s of m.values()) t += Number(s.weight || 0) * Number(s.reps || 0);
-    return t;
+  const tallies = () => {
+    const items = [];
+    for (const [id, m] of sets) for (const s of m.values()) items.push({ metric: metricById.get(id), weight: s.weight, reps: s.reps });
+    return tally(items, bw);
   };
+  const volume = () => tallies().kg;
   const openId = (logged.find((e) => sets.get(e.id).size < setsOf(e)) || logged[0] || {}).id;
 
   const prefill = (e, n) => {
@@ -87,11 +103,12 @@ export async function mount(ctx) {
     const p = prefill(e, n);
     const g = p.done ? '' : ' prefilled';
     const dis = ro ? ' disabled' : '';
+    const UI = METRIC_UI[metricById.get(e.id)];
     return `
       <div class="set-row" data-set="${n}">
         <span class="set-num">${n}</span>
-        <input class="input set-input${g}" inputmode="decimal" placeholder="kg" value="${esc(val(p.weight))}" aria-label="Peso de la serie ${n} en kilos"${dis}>
-        <input class="input set-input${g}" inputmode="numeric" placeholder="${esc(e.reps || 'reps')}" value="${esc(val(p.reps))}" aria-label="Repeticiones de la serie ${n}"${dis}>
+        ${UI.weight ? `<input class="input set-input${g}" data-w inputmode="decimal" placeholder="kg" value="${esc(val(p.weight))}" aria-label="${esc(UI.weight)} de la serie ${n}"${dis}>` : '<span></span>'}
+        <input class="input set-input${g}" data-r inputmode="numeric" placeholder="${esc(e.reps || UI.reps)}" value="${esc(val(p.reps))}" aria-label="${UI.reps === 'seg' ? 'Segundos' : 'Repeticiones'} de la serie ${n}"${dis}>
         <button class="set-done" type="button" aria-pressed="${p.done}" aria-label="Serie ${n} hecha"${dis}>✓</button>
       </div>`;
   };
@@ -100,14 +117,15 @@ export async function mount(ctx) {
     const n = setsOf(e);
     const x = extras.get(e.id);
     const open = ro ? sets.get(e.id).size > 0 : e.id === openId;
-    const info = libById.get(e.exercise_id);
+    const info = libOf(e);
     const detail = e.detail || info?.description;
     const dis = ro ? ' disabled' : '';
     const meta = [
       (e.sets || e.reps) ? `${e.sets ?? '?'} × ${e.reps ?? '—'}` : '',
       e.rir ? `RIR ${e.rir}` : '',
       e.rest_text ? `Descanso ${e.rest_text}` : (e.rest_seconds ? `Descanso ${e.rest_seconds} s` : ''),
-      e.equipment
+      e.equipment,
+      METRIC_UI[metricById.get(e.id)].hint
     ].filter(Boolean);
     return `
       <div class="card ex${open ? ' open' : ''}" data-ex="${esc(e.id)}">
@@ -123,10 +141,11 @@ export async function mount(ctx) {
           ${detail ? `<p class="muted">${esc(detail)}</p>` : ''}
           ${videoHtml(videos.get(e.id))}
           ${e.notes ? `<p>${esc(e.notes)}</p>` : ''}
-          <div class="set-labels"><span></span><span>kg</span><span>reps</span><span></span></div>
+          <div class="set-labels"><span></span><span>${esc(METRIC_UI[metricById.get(e.id)].weight || '')}</span><span>${esc(METRIC_UI[metricById.get(e.id)].reps)}</span><span></span></div>
           ${Array.from({ length: n }, (_, i) => setRow(e, i + 1)).join('')}
+          ${(ro || !METRIC_UI[metricById.get(e.id)].weight) ? '' : QUICK}
           <details class="stack">
-            <summary>RIR real, sensación y molestias</summary>
+            <summary>¿Cómo ha ido? (RIR, sensaciones o molestias)</summary>
             <div class="field"><label for="rir-${esc(e.id)}">RIR real</label>
               <select id="rir-${esc(e.id)}" class="select" data-extra="rir"${dis}>${opts(0, 5, x.rir)}</select></div>
             <div class="field"><label for="sen-${esc(e.id)}">Sensación (1-10)</label>
@@ -168,28 +187,51 @@ export async function mount(ctx) {
         ${session.notes ? `<p class="muted small">${esc(session.notes)}</p>` : ''}
       </div>
       <div class="chips" role="group" aria-label="Sesiones de la semana">${chips}</div>
+      ${needBw && !ro ? '<div class="alert alert-warn small">Para contar las dominadas necesito tu peso corporal: añádelo en Inicio.</div>' : ''}
       ${completion ? `<div class="alert">Sesión terminada el ${esc(completion.completed_on)}. Puedes seguir editando.</div>` : ''}
       ${blocksHtml}
       <div class="card stack">
         <div class="field">
-          <label for="note">Anotaciones de la sesión</label>
+          <label for="note">¿Quieres dejarme algún comentario sobre el entreno?</label>
           <textarea id="note" class="textarea" placeholder="¿Cómo te has sentido? Molestias, sensaciones…"${ro ? ' disabled' : ''}>${esc(completion?.note || '')}</textarea>
         </div>
       </div>
       <div class="summary-bar">
-        <div><p class="muted small">Volumen de la sesión</p><span class="num-xl" id="vol">${D.fmtKg(volume())} kg</span></div>
-        ${ro ? '' : `<button id="finish" class="btn" type="button">${completion ? 'Actualizar' : 'Acabar sesión'}</button>`}
+        <div><p class="muted small">Peso levantado en la sesión</p><span class="num-xl" id="vol">${D.fmtKg(volume())} kg</span><p class="muted small" id="tally">${esc(tallyText(tallies()))}</p></div>
+        ${ro ? '' : `<button id="finish" class="btn" type="button">${completion ? 'Actualizar' : '¡Terminar entrenamiento! 🎉'}</button>`}
       </div>
     </section>`);
 
+  let shown = volume();
+  const kgFmt = (n) => `${D.fmtKg(n)} kg`;
+  if (shown > 0) countUp(app.querySelector('#vol'), shown, { duration: 700, format: kgFmt });
   const refresh = (e) => {
     app.querySelector(`[data-ex="${e.id}"] [data-progress]`).textContent = `${sets.get(e.id).size}/${setsOf(e)}`;
-    app.querySelector('#vol').textContent = `${D.fmtKg(volume())} kg`;
+    const v = volume();
+    countUp(app.querySelector('#vol'), v, { from: shown, duration: 450, format: kgFmt });
+    shown = v;
+    app.querySelector('#tally').textContent = tallyText(tallies());
+  };
+  const weekDone = () => list.filter((x) => doneSessions.has(x.id)).length;
+  const quickAdjust = (btn) => {
+    const delta = Number(btn.dataset.adj);
+    let n = 0;
+    btn.closest('[data-ex]').querySelectorAll('.set-row').forEach((r) => {
+      const w = r.querySelector('[data-w]');
+      if (!w || r.querySelector('.set-done').getAttribute('aria-pressed') === 'true') return;
+      const cur = num(w.value);
+      w.value = String(Math.max(0, Math.round(((Number.isNaN(cur) || cur === null ? 0 : cur) + delta) * 10) / 10)).replace('.', ',');
+      w.classList.remove('prefilled');
+      n += 1;
+    });
+    haptic(8);
+    if (!n) toast('Todas las series de este ejercicio ya están hechas.');
   };
 
   const readRow = (row) => {
-    const [wIn, rIn] = row.querySelectorAll('input');
-    const weight = num(wIn.value);
+    const wIn = row.querySelector('[data-w]');
+    const rIn = row.querySelector('[data-r]');
+    const weight = wIn ? num(wIn.value) : null;
     const reps = Number.parseInt(rIn.value, 10);
     if (Number.isNaN(weight)) { toast('El peso no es válido.', 'error'); wIn.focus(); return null; }
     if (!Number.isInteger(reps) || reps < 1) { toast('Escribe las repeticiones.', 'error'); rIn.focus(); return null; }
@@ -221,12 +263,15 @@ export async function mount(ctx) {
         if (!v) return;
         await saveRow(e, n, v);
         btn.setAttribute('aria-pressed', 'true');
+        sparkBurst(btn);
+        haptic(15);
+        startRest(parseRest(e.rest_text, e.rest_seconds), e.exercise_name);
         row.querySelectorAll('input').forEach((i) => i.classList.remove('prefilled'));
         // las series siguientes (aún sin hacer) heredan este peso como sugerencia
         row.parentElement.querySelectorAll('.set-row').forEach((r) => {
           if (Number(r.dataset.set) <= n || r.querySelector('.set-done').getAttribute('aria-pressed') === 'true') return;
-          const w = r.querySelector('input');
-          if (w.value === '' || w.classList.contains('prefilled')) { w.value = val(v.weight); w.classList.add('prefilled'); }
+          const w = r.querySelector('[data-w]');
+          if (w && (w.value === '' || w.classList.contains('prefilled'))) { w.value = val(v.weight); w.classList.add('prefilled'); }
         });
       }
       refresh(e);
@@ -262,8 +307,16 @@ export async function mount(ctx) {
         clientId: ctx.clientId, sessionId: session.id, totalVolume: volume(),
         note: app.querySelector('#note').value.trim() || null
       });
-      toast('¡Sesión guardada! Buen trabajo.', 'ok');
-      ctx.go('home');
+      stopRest();
+      doneSessions.add(session.id);
+      const kg = volume();
+      if (kg > 0) {
+        const extra = [`${weekDone()} de ${list.length} sesiones esta semana`, tallyText(tallies())].filter(Boolean).join(' · ');
+        celebrate({ title: '¡Entrenamiento completado!', kg, extra, onClose: () => ctx.go('home') });
+      } else {
+        toast('¡Sesión guardada! Buen trabajo.', 'ok');
+        ctx.go('home');
+      }
     } catch (err) {
       toast(friendlyError(err), 'error');
       btn.disabled = false;
@@ -282,6 +335,8 @@ export async function mount(ctx) {
       return;
     }
     if (ro) return;
+    const adj = t.closest('[data-adj]');
+    if (adj) { quickAdjust(adj); return; }
     const done = t.closest('.set-done');
     if (done) { onToggle(done); return; }
     const fin = t.closest('#finish');

@@ -12,18 +12,21 @@ export const TABS = [
 
 const DAY_MS = 86400000;
 
-// Semana actual del microciclo (la semana 1 empieza el lunes de la semana de inicio del plan)
+const asDate = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T12:00:00`) : new Date(v));
+
+// Semana actual del microciclo (la semana 1 empieza el lunes de la semana en que rige el plan)
 export function weekInfo(plan, today = new Date()) {
   const weeks = Math.max(plan.weeks || 0, ...(plan.sessions || []).map((s) => s.week_number), 1);
-  const startRaw = plan.start_date || plan.activated_at || plan.created_at;
+  const startRaw = plan.starts_on || plan.start_date || plan.activated_at || plan.created_at;
   const monday = (d) => {
-    const x = new Date(d);
+    const x = asDate(d);
     x.setHours(0, 0, 0, 0);
     x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
     return x;
   };
   const diff = startRaw ? Math.round((monday(today) - monday(startRaw)) / DAY_MS / 7) : 0;
-  return { weeks, week: Math.min(Math.max(diff + 1, 1), weeks) };
+  const startDow = startRaw ? ((asDate(startRaw).getDay() + 6) % 7) + 1 : 1;
+  return { weeks, week: Math.min(Math.max(diff + 1, 1), weeks), startDow };
 }
 
 // ctx = datos y acciones que comparten todas las pantallas.
