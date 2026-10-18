@@ -160,3 +160,23 @@ h2 { font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em; }
 .spark-wrap { position: fixed; z-index: 60; width: 0; height: 0; pointer-events: none; }
 .spark { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: spark .6s ease-out forwards; }
 @keyframes spark { to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+
+/* ---------- Navegación lateral del entrenador (sobre un cliente) ---------- */
+.btn .ico { width: 1.4rem; height: 1.4rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rail { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; padding: calc(var(--s2) + env(safe-area-inset-top)) var(--s3) var(--s2); background: rgb(19 27 54 / .92); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.rail-head { display: flex; align-items: center; gap: var(--s3); width: 100%; }
+.rail-head .btn { width: auto; min-height: var(--tap); padding: 0 var(--s3); flex: none; }
+.rail-tabs { display: none; }
+.rail-week { margin-left: auto; min-width: 8.5rem; }
+.rail-week .select { min-height: 2.75rem; }
+@media (min-width: 900px) {
+  body.has-rail { padding-left: 15rem; }
+  body.has-rail #tabbar { display: none; }
+  body.has-rail #app { max-width: 48rem; }
+  body.has-rail .rail { position: fixed; inset: 0 auto 0 0; width: 15rem; flex-direction: column; align-items: stretch; padding: calc(var(--s4) + env(safe-area-inset-top)) var(--s3); border-bottom: 0; border-right: 1px solid var(--line); overflow-y: auto; }
+  body.has-rail .rail-head { flex-direction: column; align-items: flex-start; }
+  body.has-rail .rail-week { margin-left: 0; width: 100%; }
+  body.has-rail .rail-tabs { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s4); }
+  .rail-tabs .tab { flex: none; flex-direction: row; justify-content: flex-start; gap: var(--s3); min-height: var(--tap); padding: 0 var(--s3); border-radius: var(--r-md); font-size: .95rem; }
+  .rail-tabs .tab[aria-current="page"] { background: var(--surface-2); box-shadow: none; }
+}
