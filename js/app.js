@@ -1,48 +1,23 @@
-import { configOk, sb } from './supabaseClient.js';
-import { $, render, esc, toast, setBusy, renderNotice, friendlyError } from './ui.js';
+import { configOk } from './supabaseClient.js';
+import { $, renderNotice, friendlyError } from './ui.js';
 import { getSession, loadProfile, signOut, needsConsent } from './auth.js';
 import { showWelcome } from './welcome.js';
 import { showConsent } from './consent.js';
-import { showImportPlan } from './importPlan.js';
-import { savePlan, listClientPlans, setPlanStatus, deletePlan } from './plans.js';
 
-// ---------- Consultas del panel ----------
-async function listClients(trainerId) {
-  const { data, error } = await sb.from('profiles')
-    .select('id, full_name, email, is_minor, gdpr_accepted_at, guardian_consent_at')
-    .eq('trainer_id', trainerId).order('created_at');
-  if (error) throw error;
-  return data;
-}
-
-async function listPendingInvites(trainerId) {
-  const { data, error } = await sb.from('client_invites')
-    .select('email, full_name, is_minor')
-    .eq('trainer_id', trainerId).is('used_at', null).order('created_at');
-  if (error) throw error;
-  return data;
-}
-
-// Si la biblioteca falla o está vacía, la app sigue funcionando (los ejercicios quedan sin vídeo)
-async function listLibrary(trainerId) {
-  try {
-    const { data, error } = await sb.from('exercises').select('id, name').eq('trainer_id', trainerId);
-    if (error) throw error;
-    return data;
-  } catch (err) {
-    console.error(err);
-    return [];
-  }
-}
-
-// ---------- Navegación general ----------
 async function logout() {
   try { await signOut(); } catch (err) { console.error(err); }
   route();
 }
 
+// Decide qué pantalla mostrar según sesión, rol y consentimiento
 async function route() {
   try {
+    // Limpia la navegación de la sesión anterior (barra inferior y lateral del entrenador)
+    const bar = $('#tabbar');
+    if (bar) bar.hidden = true;
+    document.getElementById('rail')?.remove();
+    document.body.classList.remove('has-rail');
+
     const session = await getSession();
     if (!session) return showWelcome(route);
 
@@ -66,214 +41,9 @@ async function route() {
       }
       return (await import('./clientApp.js')).showClientApp(profile, { onLogout: logout });
     }
-    showTrainerHome(profile);
+    return (await import('./trainerApp.js')).showTrainerApp(profile, { onLogout: logout });
   } catch (err) {
     renderNotice('No se pudo cargar', friendlyError(err), 'Reintentar', route);
-  }
-}
-
-// ---------- Pantalla provisional del cliente (se sustituirá en el siguiente paso) ----------
-function showClientHome(profile) {
-  render(`
-    <section class="stack-lg">
-      <div class="view-header">
-        <h1>Hola, ${esc(profile.full_name || profile.email)}</h1>
-        <span class="badge">Cliente</span>
-      </div>
-      <div class="alert">Aquí aparecerá tu entrenamiento de hoy.</div>
-      <button id="logout" class="btn btn-secondary btn-block" type="button">Cerrar sesión</button>
-    </section>`);
-  $('#logout').onclick = logout;
-}
-
-// ---------- Panel del entrenador ----------
-const PLAN_STATUS = {
-  draft: ['Borrador', 'badge-warn'],
-  active: ['Activo', 'badge-ok'],
-  archived: ['Archivado', '']
-};
-
-async function showTrainerHome(profile) {
-  render('<div class="splash"><div class="spinner" aria-hidden="true"></div><p>Cargando panel…</p></div>');
-
-  let clients, invites, plansByClient;
-  try {
-    [clients, invites] = await Promise.all([listClients(profile.id), listPendingInvites(profile.id)]);
-    const lists = await Promise.all(clients.map((c) => listClientPlans(c.id)));
-    plansByClient = new Map(clients.map((c, i) => [c.id, lists[i]]));
-  } catch (err) {
-    return renderNotice('No se pudo cargar el panel', friendlyError(err), 'Reintentar', () => showTrainerHome(profile));
-  }
-
-  const planRow = (p, c) => {
-    const [label, cls] = PLAN_STATUS[p.status] || [p.status, ''];
-    const btn = (action, text, kind) => `<button class="btn ${kind}" type="button" data-plan-action="${action}" data-plan="${esc(p.id)}" data-client="${esc(c.id)}">${text}</button>`;
-    return `
-      <div class="stack">
-        <div class="row-between">
-          <div class="grow">${esc(p.name)}</div>
-          <span class="badge ${cls}">${label}</span>
-        </div>
-        <div class="row">
-          ${p.status === 'active' ? btn('archive', 'Archivar', 'btn-secondary') : btn('activate', 'Activar', '')}
-          ${p.status === 'active' ? '' : btn('delete', 'Borrar', 'btn-ghost')}
-        </div>
-      </div>`;
-  };
-
-  const clientRow = (c) => {
-    const noGdpr = !c.gdpr_accepted_at;
-    const needsGuardian = c.is_minor && !c.guardian_consent_at;
-    const badge = noGdpr ? '<span class="badge badge-warn">Sin aceptar RGPD</span>'
-      : needsGuardian ? '<span class="badge badge-warn">Falta tutor</span>'
-      : '<span class="badge badge-ok">Activo</span>';
-    const plans = plansByClient.get(c.id) || [];
-    const noActive = plans.length > 0 && !plans.some((p) => p.status === 'active');
-    return `
-      <div class="card stack">
-        <div class="row-between">
-          <div class="grow">
-            <div>${esc(c.full_name || c.email)}${c.is_minor ? ' <span class="badge">Menor</span>' : ''}</div>
-            <div class="muted small">${esc(c.email)}</div>
-          </div>
-          ${badge}
-        </div>
-        ${needsGuardian ? `<button class="btn btn-secondary" type="button" data-guardian="${esc(c.id)}">Registrar consentimiento del tutor</button>` : ''}
-        ${noActive ? '<div class="alert alert-warn small">Este cliente no ve ningún plan todavía: activa uno.</div>' : ''}
-        ${plans.length
-          ? plans.map((p) => planRow(p, c)).join('')
-          : '<p class="muted small">Sin planes. Impórtalo con el botón de arriba.</p>'}
-      </div>`;
-  };
-
-  const app = render(`
-    <section class="stack-lg">
-      <div class="view-header">
-        <h1>Hola, ${esc(profile.full_name || profile.email)}</h1>
-        <span class="badge badge-ok">Entrenador</span>
-      </div>
-
-      <button id="import" class="btn btn-lg btn-block" type="button">Importar plan desde Excel</button>
-
-      <div class="stack">
-        <h2>Clientes</h2>
-        ${clients.length
-          ? clients.map(clientRow).join('')
-          : '<div class="empty"><p>Aún no tienes clientes vinculados. Invita al primero con el formulario de abajo.</p></div>'}
-      </div>
-
-      <div class="stack">
-        <h2>Invitar cliente</h2>
-        <form id="invite-form" class="card stack" novalidate>
-          <div class="field">
-            <label for="inv-email">Email del cliente</label>
-            <input id="inv-email" class="input" type="email" inputmode="email" autocomplete="off" required>
-          </div>
-          <div class="field">
-            <label for="inv-name">Nombre (opcional)</label>
-            <input id="inv-name" class="input" type="text" autocomplete="off">
-          </div>
-          <label class="check"><input type="checkbox" id="inv-minor"><span>Es menor de edad (requiere consentimiento del tutor)</span></label>
-          <p id="inv-error" class="field-error" role="alert" hidden></p>
-          <button id="inv-submit" class="btn btn-block" type="submit">Crear invitación</button>
-          <p class="field-hint">Después, el cliente debe crear su cuenta en la app con ese mismo email.</p>
-        </form>
-        ${invites.length ? `
-          <div class="card"><ul class="list">
-            ${invites.map((i) => `
-              <li class="list-item">
-                <div class="grow">${esc(i.full_name || i.email)}<div class="muted small">${esc(i.email)}</div></div>
-                <span class="badge">Pendiente de registro</span>
-              </li>`).join('')}
-          </ul></div>` : ''}
-      </div>
-
-      <button id="logout" class="btn btn-secondary btn-block" type="button">Cerrar sesión</button>
-    </section>`);
-
-  $('#logout').onclick = logout;
-  $('#import').onclick = () => openImport(profile);
-
-  app.querySelectorAll('[data-plan-action]').forEach((btn) => {
-    btn.onclick = async () => {
-      const { planAction, plan, client } = btn.dataset;
-      if (planAction === 'delete' && !confirm('¿Borrar este plan con todo su contenido? No se puede deshacer.')) return;
-      setBusy(btn, true);
-      try {
-        if (planAction === 'delete') {
-          await deletePlan(plan);
-          toast('Plan borrado.', 'ok');
-        } else {
-          const status = planAction === 'activate' ? 'active' : 'archived';
-          await setPlanStatus({ planId: plan, clientId: client, status });
-          toast(status === 'active' ? 'Plan activado: el cliente ya lo ve.' : 'Plan archivado.', 'ok');
-        }
-        showTrainerHome(profile);
-      } catch (err) {
-        toast(friendlyError(err), 'error');
-        setBusy(btn, false);
-      }
-    };
-  });
-
-  $('#invite-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const errBox = $('#inv-error');
-    errBox.hidden = true;
-    const email = $('#inv-email').value.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      errBox.textContent = 'Escribe un email válido.';
-      errBox.hidden = false;
-      return;
-    }
-    const btn = $('#inv-submit');
-    setBusy(btn, true);
-    try {
-      const { error } = await sb.from('client_invites').insert({
-        email, trainer_id: profile.id,
-        full_name: $('#inv-name').value.trim() || null,
-        is_minor: $('#inv-minor').checked
-      });
-      if (error) throw error;
-      toast('Invitación creada. Dile que se registre con ese email.', 'ok');
-      showTrainerHome(profile);
-    } catch (err) {
-      errBox.textContent = err.code === '23505' ? 'Ya has invitado a ese email.' : friendlyError(err);
-      errBox.hidden = false;
-      setBusy(btn, false);
-    }
-  };
-
-  app.querySelectorAll('[data-guardian]').forEach((btn) => {
-    btn.onclick = async () => {
-      const name = (prompt('Nombre del padre, madre o tutor legal que ha dado su consentimiento:') || '').trim();
-      if (!name) return;
-      setBusy(btn, true);
-      try {
-        const { error } = await sb.from('profiles')
-          .update({ guardian_name: name, guardian_consent_at: new Date().toISOString() })
-          .eq('id', btn.dataset.guardian);
-        if (error) throw error;
-        toast('Consentimiento del tutor registrado.', 'ok');
-        showTrainerHome(profile);
-      } catch (err) {
-        toast(friendlyError(err), 'error');
-        setBusy(btn, false);
-      }
-    };
-  });
-}
-
-async function openImport(profile) {
-  try {
-    const [clients, library] = await Promise.all([listClients(profile.id), listLibrary(profile.id)]);
-    showImportPlan({
-      clients, library,
-      onConfirm: (data) => savePlan({ trainerId: profile.id, ...data }),
-      onBack: () => showTrainerHome(profile)
-    });
-  } catch (err) {
-    toast(friendlyError(err), 'error');
   }
 }
 

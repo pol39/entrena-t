@@ -1,5 +1,5 @@
 import { $, render, esc, renderNotice, friendlyError } from './ui.js';
-import { loadActivePlan } from './plans.js';
+import { loadActivePlan, loadPlanById } from './plans.js';
 
 // Cada pestaña carga su pantalla desde su propio archivo (viewHome.js, viewSession.js…).
 // Mientras un archivo no exista, se muestra una pantalla provisional.
@@ -24,25 +24,28 @@ export function weekInfo(plan, today = new Date()) {
     x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
     return x;
   };
-  const diff = startRaw ? Math.round((monday(today) - monday(startRaw)) / DAY_MS / 7) : 0;
+  if (plan.status === 'draft') return { weeks, week: 1, startDow: 1 }; // un borrador aún no ha empezado
+  const ref = plan.status === 'archived' && plan.ended_on ? asDate(plan.ended_on) : today; // un plan archivado se ve en la semana en que terminó
+  const diff = startRaw ? Math.round((monday(ref) - monday(startRaw)) / DAY_MS / 7) : 0;
   const startDow = startRaw ? ((asDate(startRaw).getDay() + 6) % 7) + 1 : 1;
   return { weeks, week: Math.min(Math.max(diff + 1, 1), weeks), startDow };
 }
 
 // ctx = datos y acciones que comparten todas las pantallas.
-// mode: 'client' (el propio cliente) o 'trainer' (el entrenador mirando a un cliente).
-export async function showClientApp(profile, { onLogout, mode = 'client' } = {}) {
-  render('<div class="splash"><div class="spinner" aria-hidden="true"></div><p>Cargando tu entrenamiento…</p></div>');
+// mode: 'client' (el propio cliente) o 'trainer' (el entrenador mirando a un cliente; planId = plan concreto a ver).
+export async function showClientApp(profile, { onLogout, onBack, mode = 'client', planId = null } = {}) {
+  render('<div class="splash"><div class="spinner" aria-hidden="true"></div><p>Cargando el entrenamiento…</p></div>');
 
+  const load = () => (planId ? loadPlanById(planId) : loadActivePlan(profile.id));
   let plan;
   try {
-    plan = await loadActivePlan(profile.id);
+    plan = await load();
   } catch (err) {
     return renderNotice('No se pudo cargar el entrenamiento', friendlyError(err), 'Reintentar',
-      () => showClientApp(profile, { onLogout, mode }));
+      () => showClientApp(profile, { onLogout, onBack, mode, planId }));
   }
 
-  const ctx = { mode, clientId: profile.id, profile, plan, week: 1, weeks: 1, tab: 'home', nav: 0 };
+  const ctx = { mode, clientId: profile.id, profile, plan, planId, week: 1, weeks: 1, tab: 'home', nav: 0, onBack };
   Object.assign(ctx, plan ? weekInfo(plan) : {});
   ctx.go = (id) => navigate(ctx, id);
   ctx.logout = async () => {
@@ -50,7 +53,7 @@ export async function showClientApp(profile, { onLogout, mode = 'client' } = {})
     await onLogout?.();
   };
   ctx.reload = async () => {
-    ctx.plan = await loadActivePlan(profile.id);
+    ctx.plan = await load();
     Object.assign(ctx, ctx.plan ? weekInfo(ctx.plan) : {});
     return navigate(ctx, ctx.tab);
   };
@@ -59,18 +62,63 @@ export async function showClientApp(profile, { onLogout, mode = 'client' } = {})
   navigate(ctx, 'home');
 }
 
+// Quita la navegación lateral del entrenador (al volver a su lista de clientes o al cerrar sesión)
+export function unmountClientApp() {
+  document.getElementById('rail')?.remove();
+  document.body.classList.remove('has-rail');
+}
+
+const tabsHtml = () => TABS.map((t) => `
+  <button class="tab" type="button" data-tab="${t.id}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">${t.icon}</svg>
+    <span>${t.label}</span>
+  </button>`).join('');
+
+const PLAN_STATUS = { draft: 'borrador', active: 'activo', archived: 'archivado' };
+
 function mountTabs(ctx) {
   const bar = $('#tabbar');
-  bar.innerHTML = TABS.map((t) => `
-    <button class="tab" type="button" data-tab="${t.id}">
-      <svg viewBox="0 0 24 24" aria-hidden="true">${t.icon}</svg>
-      <span>${t.label}</span>
-    </button>`).join('');
+  bar.innerHTML = tabsHtml();
   bar.hidden = false;
   bar.onclick = (e) => {
     const btn = e.target.closest('[data-tab]');
     if (btn) navigate(ctx, btn.dataset.tab);
   };
+  unmountClientApp();
+  if (ctx.mode !== 'trainer') return;
+
+  // Entrenador: en pantallas anchas las 4 pestañas van en un lateral; en el móvil, abajo y con botón de volver arriba
+  const rail = document.createElement('aside');
+  rail.id = 'rail';
+  rail.className = 'rail';
+  rail.setAttribute('aria-label', 'Cliente');
+  const name = ctx.profile.full_name || ctx.profile.email;
+  const weekSel = ctx.weeks > 1 ? `
+      <label class="field rail-week"><span class="small muted">Semana que estás viendo</span>
+        <select class="select" data-week-select aria-label="Semana">${Array.from({ length: ctx.weeks }, (_, i) =>
+          `<option value="${i + 1}"${i + 1 === ctx.week ? ' selected' : ''}>Semana ${i + 1}</option>`).join('')}</select></label>` : '';
+  const planText = ctx.plan ? `${ctx.plan.name} · ${PLAN_STATUS[ctx.plan.status] || ctx.plan.status}` : 'Sin plan activo';
+  rail.innerHTML = `
+    <div class="rail-head">
+      <button type="button" class="btn btn-ghost" data-back>← Clientes</button>
+      <div><b>${esc(name)}</b><div class="muted small">${esc(planText)}</div></div>
+      ${weekSel}
+    </div>
+    <nav class="rail-tabs" aria-label="Pantallas del cliente">${tabsHtml()}</nav>`;
+  rail.onchange = (e) => {
+    const sel = e.target.closest('[data-week-select]');
+    if (!sel) return;
+    ctx.week = Number(sel.value);
+    ctx.cycleWeek = ctx.week;
+    navigate(ctx, ctx.tab);
+  };
+  rail.onclick = (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) { navigate(ctx, t.dataset.tab); return; }
+    if (e.target.closest('[data-back]')) ctx.onBack?.();
+  };
+  document.body.prepend(rail);
+  document.body.classList.add('has-rail');
 }
 
 async function navigate(ctx, id) {
@@ -79,7 +127,7 @@ async function navigate(ctx, id) {
   const to = TABS.indexOf(tab);
   const slide = from === to || from < 0 ? '' : (to > from ? 'slide-r' : 'slide-l');
   ctx.tab = tab.id;
-  document.querySelectorAll('#tabbar [data-tab]').forEach((b) => {
+  document.querySelectorAll('#tabbar [data-tab], #rail [data-tab]').forEach((b) => {
     if (b.dataset.tab === tab.id) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
