@@ -83,6 +83,7 @@ export async function mount(ctx) {
   }
 
   const setsOf = (e) => e.sets || 3;
+  const hasDrop = (e) => /drop/i.test(e.scheme || '');
   const tallies = () => {
     const items = [];
     for (const [id, m] of sets) for (const s of m.values()) items.push({ metric: metricById.get(id), weight: s.weight, reps: s.reps });
@@ -104,9 +105,13 @@ export async function mount(ctx) {
     const g = p.done ? '' : ' prefilled';
     const dis = ro ? ' disabled' : '';
     const UI = METRIC_UI[metricById.get(e.id)];
+    const drop = hasDrop(e) && n === setsOf(e);
+    const numLabel = drop
+      ? `<span class="set-num" title="Drop-set" aria-label="Serie ${n}, drop-set">↓</span>`
+      : `<span class="set-num">${n}</span>`;
     return `
       <div class="set-row" data-set="${n}">
-        <span class="set-num">${n}</span>
+        ${numLabel}
         ${UI.weight ? `<input class="input set-input${g}" data-w inputmode="decimal" placeholder="kg" value="${esc(val(p.weight))}" aria-label="${esc(UI.weight)} de la serie ${n}"${dis}>` : '<span></span>'}
         <input class="input set-input${g}" data-r inputmode="numeric" placeholder="${esc(e.reps || UI.reps)}" value="${esc(val(p.reps))}" aria-label="${UI.reps === 'seg' ? 'Segundos' : 'Repeticiones'} de la serie ${n}"${dis}>
         <button class="set-done" type="button" aria-pressed="${p.done}" aria-label="Serie ${n} hecha"${dis}>✓</button>
@@ -120,12 +125,13 @@ export async function mount(ctx) {
     const info = libOf(e);
     const detail = e.detail || info?.description;
     const dis = ro ? ' disabled' : '';
+    const UI = METRIC_UI[metricById.get(e.id)];
     const meta = [
-      (e.sets || e.reps) ? `${e.sets ?? '?'} × ${e.reps ?? '—'}` : '',
+      e.scheme || ((e.sets || e.reps) ? `${e.sets ?? '?'} × ${e.reps ?? '—'}` : ''),
       e.rir ? `RIR ${e.rir}` : '',
       e.rest_text ? `Descanso ${e.rest_text}` : (e.rest_seconds ? `Descanso ${e.rest_seconds} s` : ''),
       e.equipment,
-      METRIC_UI[metricById.get(e.id)].hint
+      UI.hint
     ].filter(Boolean);
     return `
       <div class="card ex${open ? ' open' : ''}" data-ex="${esc(e.id)}">
@@ -141,9 +147,10 @@ export async function mount(ctx) {
           ${detail ? `<p class="muted">${esc(detail)}</p>` : ''}
           ${videoHtml(videos.get(e.id))}
           ${e.notes ? `<p>${esc(e.notes)}</p>` : ''}
-          <div class="set-labels"><span></span><span>${esc(METRIC_UI[metricById.get(e.id)].weight || '')}</span><span>${esc(METRIC_UI[metricById.get(e.id)].reps)}</span><span></span></div>
+          <div class="set-labels"><span></span><span>${esc(UI.weight || '')}</span><span>${esc(UI.reps)}</span><span></span></div>
           ${Array.from({ length: n }, (_, i) => setRow(e, i + 1)).join('')}
-          ${(ro || !METRIC_UI[metricById.get(e.id)].weight) ? '' : QUICK}
+          ${hasDrop(e) ? '<p class="muted small">↓ La última serie es un drop-set.</p>' : ''}
+          ${(ro || !UI.weight) ? '' : QUICK}
           <details class="stack">
             <summary>¿Cómo ha ido? (RIR, sensaciones o molestias)</summary>
             <div class="field"><label for="rir-${esc(e.id)}">RIR real</label>
@@ -178,14 +185,18 @@ export async function mount(ctx) {
     <button class="chip" type="button" data-session="${esc(s.id)}" aria-pressed="${s.id === session.id}" aria-label="${esc(s.title)}">
       Sesión ${i + 1}${doneSessions.has(s.id) ? ' ✓' : ''}</button>`).join('');
 
+  const tipBox = session.notes
+    ? `<div class="alert">${session.tip_title ? `<strong>${esc(session.tip_title)}:</strong> ` : ''}${esc(session.notes)}</div>`
+    : '';
+
   const app = render(`
     <section class="stack-lg">
       <div>
         <p class="muted small">Semana ${ctx.week} de ${ctx.weeks}</p>
         <h1>${esc(session.title)}</h1>
         ${session.objective ? `<p class="muted">${esc(session.objective)}</p>` : ''}
-        ${session.notes ? `<p class="muted small">${esc(session.notes)}</p>` : ''}
       </div>
+      ${tipBox}
       <div class="chips" role="group" aria-label="Sesiones de la semana">${chips}</div>
       ${needBw && !ro ? '<div class="alert alert-warn small">Para contar las dominadas necesito tu peso corporal: añádelo en Inicio.</div>' : ''}
       ${completion ? `<div class="alert">Sesión terminada el ${esc(completion.completed_on)}. Puedes seguir editando.</div>` : ''}
@@ -193,7 +204,7 @@ export async function mount(ctx) {
       <div class="card stack">
         <div class="field">
           <label for="note">¿Quieres dejarme algún comentario sobre el entreno?</label>
-          <textarea id="note" class="textarea" placeholder="¿Cómo te has sentido? Molestias, sensaciones…"${ro ? ' disabled' : ''}>${esc(completion?.note || '')}</textarea>
+          <textarea id="note" class="textarea" placeholder="${esc(session.notes_hint || '¿Cómo te has sentido? Molestias, sensaciones…')}"${ro ? ' disabled' : ''}>${esc(completion?.note || '')}</textarea>
         </div>
       </div>
       <div class="summary-bar">
