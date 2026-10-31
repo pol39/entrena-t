@@ -12,6 +12,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const empty = (t) => `<div class="empty"><p>${t}</p></div>`;
 
 // Lunes a domingo de la semana de "today", a medianoche local
 function weekDates(today) {
@@ -83,7 +84,7 @@ export async function mount(ctx) {
     return `<div class="${cls.join(' ')}" role="listitem" aria-label="${label}">${DAY_LETTERS[i]}<span class="dot"></span></div>`;
   }).join('');
 
-  // --- Peso levantado por día (peso × repeticiones) ---
+  // --- Peso levantado por día, según el tipo de ejercicio ---
   const exById = exerciseMap(ctx.plan);
   const bw = Number(ctx.profile.body_weight_kg) || null;
   const volumes = dates.map(() => 0);
@@ -108,9 +109,87 @@ export async function mount(ctx) {
   }).join('');
   const barsLabel = dates.map((_, i) => `${DAY_NAMES[i]} ${fmt(volumes[i])} kg`).join(', ');
 
-  // --- Hábitos marcables de hoy ---
-  const checkMap = new Map(checks.map((c) => [c.habit_id, c]));
-  const habits = (ctx.plan.habits_nutrition || []).filter((h) => h.checkable && appliesOn(h, today));
+  // --- Pautas de hoy: alimentación, descanso y hábitos ---
+  const all = ctx.plan.habits_nutrition || [];
+  const byCat = (cat) => all.filter((h) => h.category === cat);
+  const state = new Map(checks.map((c) => [c.habit_id, { done: !!c.done, count: c.count ?? 0 }]));
+  const isOn = (h) => h.checkable && appliesOn(h, today);
+  const isDone = (h) => {
+    const s = state.get(h.id);
+    return h.target > 1 ? (s?.count ?? 0) >= h.target : !!s?.done;
+  };
+
+  const infoHtml = (h) => ((!h.content && !h.detail)
+    ? `<h3>${esc(h.title)}</h3>`
+    : `<div class="card stack">
+        <b>${esc(h.title)}</b>
+        ${h.subtitle ? `<p class="muted small">${esc(h.subtitle)}</p>` : ''}
+        ${h.content ? `<p style="white-space: pre-line">${esc(h.content)}</p>` : ''}
+        ${h.detail ? `<p class="hot small" style="white-space: pre-line">${esc(h.detail)}</p>` : ''}
+      </div>`);
+
+  const itemHtml = (h) => {
+    if (!h.checkable) return infoHtml(h);
+    if (!appliesOn(h, today)) return '';
+    const s = state.get(h.id);
+    if (h.target > 1) {
+      const step = stepOf(h.target);
+      const n = s?.count ?? 0;
+      return `
+        <div class="card stack" data-counter="${esc(h.id)}" data-target="${h.target}">
+          <div class="row-between"><span>${esc(h.title)}</span><span class="muted small">Vas <b data-n>${n}</b>/${h.target}${h.unit ? ` ${esc(h.unit)}` : ''}</span></div>
+          <div class="meter${n >= h.target ? ' full' : ''}" style="--p:${Math.min(n / h.target, 1)}"><span></span></div>
+          ${ro ? '' : `<div class="counter">
+            <button class="btn-round" type="button" data-step="-${step}" aria-label="Quitar ${step}">−</button>
+            <span class="count" data-n>${n}</span>
+            <button class="btn-round plus" type="button" data-step="${step}" aria-label="Añadir ${step}">+</button>
+          </div>`}
+        </div>`;
+    }
+    return `
+      <div class="card">
+        <label class="check">
+          <input type="checkbox" data-habit="${esc(h.id)}"${s?.done ? ' checked' : ''}${ro ? ' disabled' : ''}>
+          <span class="grow">
+            <b>${esc(h.title)}</b>${h.subtitle ? ` <span class="badge badge-warn">${esc(h.subtitle)}</span>` : ''}
+            ${h.content ? `<span class="muted small" style="display:block">${esc(h.content)}</span>` : ''}
+            ${h.detail ? `<span class="hot small" style="display:block; white-space: pre-line">${esc(h.detail)}</span>` : ''}
+          </span>
+        </label>
+      </div>`;
+  };
+
+  const foodHtml = () => {
+    const macros = byCat('macros');
+    const kcal = macros.find((m) => /kcal/i.test(m.detail || ''));
+    const cards = macros.filter((m) => m !== kcal);
+    const meals = byCat('alimentacion');
+    const eq = byCat('equivalencias');
+    const sup = byCat('suplementos');
+    if (!macros.length && !meals.length && !eq.length && !sup.length) {
+      return empty('Tu entrenador aún no ha añadido la guía de alimentación a este plan.');
+    }
+    return `
+      ${kcal ? `<div class="card stack"><h3>${esc(kcal.title)}</h3><span class="num-xl">${esc(kcal.detail)}</span>${kcal.content ? `<p class="muted small">${esc(kcal.content)}</p>` : ''}</div>` : ''}
+      ${cards.length ? `<div class="macros">${cards.map((m) => `
+        <div class="card"><p class="muted small">${esc(m.title)}</p><b class="macro-val">${esc(m.detail || '')}</b><p class="muted small">${esc(m.content || '')}</p></div>`).join('')}</div>` : ''}
+      ${meals.map(itemHtml).join('')}
+      ${eq.map((h) => ((!h.content) ? `<h3>${esc(h.title)}</h3>`
+        : `<details class="card"><summary><strong>${esc(h.title)}</strong></summary><p style="white-space: pre-line; margin-top: var(--s2)">${esc(h.content)}</p></details>`)).join('')}
+      ${sup.map(itemHtml).join('')}`;
+  };
+
+  const listHtml = (cat, msg) => (byCat(cat).length ? byCat(cat).map(itemHtml).join('') : empty(msg));
+  const slides = [
+    { label: 'Alimentación', cats: ['alimentacion'], html: foodHtml() },
+    { label: 'Descanso', cats: ['descanso'], html: listHtml('descanso', 'Tu entrenador aún no ha añadido pautas de descanso a este plan.') },
+    { label: 'Hábitos', cats: ['habito'], html: listHtml('habito', 'Tu entrenador aún no ha añadido hábitos a este plan.') }
+  ];
+  const progress = (s) => {
+    const list = all.filter((h) => s.cats.includes(h.category) && isOn(h));
+    return { done: list.filter(isDone).length, total: list.length };
+  };
+  const chipText = (s) => { const p = progress(s); return `${s.label}${p.total ? ` ${p.done}/${p.total}` : ''}`; };
 
   const name = ctx.profile.full_name || ctx.profile.email.split('@')[0];
   const nEx = next ? (next.session_exercises || []).filter((e) => (e.block || 'principal') === 'principal').length : 0;
@@ -121,6 +200,7 @@ export async function mount(ctx) {
       <div class="card card-today stack">
         <p class="muted small">${next === planned ? 'Hoy' : 'Siguiente sesión'}${doneToday ? ' · hoy ya has entrenado' : ''}</p>
         <h2>${esc(next.title)}</h2>
+        ${next.focus ? `<p class="muted small">${esc(next.focus)}</p>` : ''}
         <p>${nEx ? `${nEx} ejercicio${nEx === 1 ? '' : 's'}` : (KIND[next.kind] || 'Sesión')}</p>
         ${next.objective ? `<p class="muted small">${esc(next.objective)}</p>` : ''}
         <button id="start" class="btn btn-lg btn-block" type="button">${ro ? 'Ver sesión' : 'Empezar sesión'}</button>
@@ -130,34 +210,6 @@ export async function mount(ctx) {
   } else {
     todayCard = '<div class="card"><p class="muted">No hay sesiones programadas esta semana.</p></div>';
   }
-
-  const habitHtml = (h) => {
-    const c = checkMap.get(h.id);
-    if (!(h.target > 1)) {
-      return `<label class="check"><input type="checkbox" data-habit="${esc(h.id)}"${c?.done ? ' checked' : ''}${ro ? ' disabled' : ''}><span>${esc(h.title)}</span></label>`;
-    }
-    const step = stepOf(h.target);
-    const n = c?.count ?? 0;
-    return `
-      <div class="stack" data-counter="${esc(h.id)}" data-target="${h.target}">
-        <div class="row-between"><span>${esc(h.title)}</span><span class="muted small">Vas <b data-n>${n}</b>/${h.target}${h.unit ? ` ${esc(h.unit)}` : ''}</span></div>
-        <div class="meter${n >= h.target ? ' full' : ''}" style="--p:${Math.min(n / h.target, 1)}"><span></span></div>
-        ${ro ? '' : `<div class="counter">
-          <button class="btn-round" type="button" data-step="-${step}" aria-label="Quitar ${step}">−</button>
-          <span class="count" data-n>${n}</span>
-          <button class="btn-round plus" type="button" data-step="${step}" aria-label="Añadir ${step}">+</button>
-        </div>`}
-      </div>`;
-  };
-
-  const habitsCard = habits.length ? `
-    <div class="card stack">
-      <div>
-        <h2>Hábitos y descanso</h2>
-        <p class="muted small">${ro ? 'Lo que ha marcado hoy' : 'Marca lo que has hecho hoy'}</p>
-      </div>
-      ${habits.map(habitHtml).join('')}
-    </div>` : '';
 
   const app = render(`
     <section class="stack-lg">
@@ -183,7 +235,19 @@ export async function mount(ctx) {
       </div>
 
       ${todayCard}
-      ${habitsCard}
+
+      <div class="stack">
+        <div>
+          <h2>Tu día</h2>
+          <p class="muted small">${ro ? 'Lo que ha marcado hoy. Desliza para cambiar de apartado.' : 'Marca lo que vas haciendo. Desliza para cambiar de apartado.'}</p>
+        </div>
+        <div class="chips" role="group" aria-label="Alimentación, descanso y hábitos">
+          ${slides.map((s, i) => `<button class="chip" type="button" data-slide="${i}" aria-pressed="${i === 0}">${esc(chipText(s))}</button>`).join('')}
+        </div>
+        <div class="carousel" id="carousel">
+          ${slides.map((s) => `<section class="slide stack" aria-label="${esc(s.label)}">${s.html}</section>`).join('')}
+        </div>
+      </div>
 
       <div class="card stack">
         <div class="row">
@@ -208,9 +272,38 @@ export async function mount(ctx) {
     </section>`);
 
   app.querySelector('#start')?.addEventListener('click', () => ctx.go('session'));
+  app.querySelector('#logout')?.addEventListener('click', ctx.logout);
   countUp(app.querySelector('.ring .label'), pctText, { format: (n) => `${Math.round(n)}%` });
-  countUp(app.querySelector('.num-xl'), total, { format: (n) => `${fmt(n)} kg` });
+  countUp(app.querySelector('.num-xl:not(.card .num-xl:first-child)') || app.querySelector('.card .row > .num-xl'), total, { format: (n) => `${fmt(n)} kg` });
 
+  // --- Carrusel: se desliza con el dedo o se toca en los botones ---
+  const car = app.querySelector('#carousel');
+  const chips = [...app.querySelectorAll('[data-slide]')];
+  let active = 0;
+  const fit = () => { const s = car.children[active]; if (s) car.style.height = `${s.offsetHeight}px`; };
+  const paintChips = () => chips.forEach((c, i) => {
+    c.textContent = chipText(slides[i]);
+    c.setAttribute('aria-pressed', String(i === active));
+  });
+  chips.forEach((c, i) => {
+    c.onclick = () => {
+      active = i;
+      car.scrollTo({ left: i * car.clientWidth, behavior: 'smooth' });
+      paintChips();
+      fit();
+    };
+  });
+  car.addEventListener('scroll', () => {
+    const i = Math.round(car.scrollLeft / Math.max(car.clientWidth, 1));
+    if (i !== active && i >= 0 && i < slides.length) { active = i; paintChips(); fit(); }
+  }, { passive: true });
+  fit();
+  if (typeof ResizeObserver === 'function') {
+    const ro2 = new ResizeObserver(fit);
+    [...car.children].forEach((s) => ro2.observe(s));
+  }
+
+  // --- Peso corporal ---
   app.querySelector('#bw-save').onclick = async (ev) => {
     const btn = ev.currentTarget;
     const kg = Number(String(app.querySelector('#bw').value).trim().replace(',', '.'));
@@ -228,6 +321,7 @@ export async function mount(ctx) {
     }
   };
 
+  // --- Contadores (vasos de agua, pasos…) ---
   const paintCounter = (box, n, target) => {
     box.querySelectorAll('[data-n]').forEach((el) => { el.textContent = String(n); });
     const meter = box.querySelector('.meter');
@@ -235,33 +329,42 @@ export async function mount(ctx) {
     meter.classList.toggle('full', n >= target);
   };
   app.querySelectorAll('[data-counter]').forEach((box) => {
+    const id = box.dataset.counter;
     const target = Number(box.dataset.target);
     let n = Number(box.querySelector('[data-n]').textContent);
     box.querySelectorAll('button[data-step]').forEach((b) => {
       b.onclick = async () => {
-        const next = Math.min(Math.max(n + Number(b.dataset.step), 0), target * 2);
-        if (next === n) return;
+        const nextN = Math.min(Math.max(n + Number(b.dataset.step), 0), target * 2);
+        if (nextN === n) return;
         const prev = n;
-        n = next;
+        n = nextN;
         paintCounter(box, n, target);
+        state.set(id, { done: n >= target, count: n });
+        paintChips();
         try {
-          await setHabitCheck({ clientId: ctx.clientId, habitId: box.dataset.counter, date: todayIso, done: n >= target, count: n });
+          await setHabitCheck({ clientId: ctx.clientId, habitId: id, date: todayIso, done: n >= target, count: n });
           if (prev < target && n >= target) { sparkBurst(b); haptic([20, 40, 20]); }
         } catch (err) {
           n = prev;
           paintCounter(box, n, target);
+          state.set(id, { done: n >= target, count: n });
+          paintChips();
           toast(friendlyError(err), 'error');
         }
       };
     });
   });
-  app.querySelector('#logout')?.addEventListener('click', ctx.logout);
+
+  // --- Casillas (comidas, descanso, hábitos) ---
   app.querySelectorAll('input[data-habit]').forEach((input) => {
     input.onchange = async () => {
+      const id = input.dataset.habit;
       input.disabled = true;
       try {
-        await setHabitCheck({ clientId: ctx.clientId, habitId: input.dataset.habit, date: todayIso, done: input.checked });
+        await setHabitCheck({ clientId: ctx.clientId, habitId: id, date: todayIso, done: input.checked });
+        state.set(id, { ...(state.get(id) || { count: 0 }), done: input.checked });
         if (input.checked) { sparkBurst(input); haptic(10); }
+        paintChips();
       } catch (err) {
         input.checked = !input.checked;
         toast(friendlyError(err), 'error');
