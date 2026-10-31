@@ -179,4 +179,12 @@ h2 { font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em; }
   body.has-rail .rail-tabs { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s4); }
   .rail-tabs .tab { flex: none; flex-direction: row; justify-content: flex-start; gap: var(--s3); min-height: var(--tap); padding: 0 var(--s3); border-radius: var(--r-md); font-size: .95rem; }
   .rail-tabs .tab[aria-current="page"] { background: var(--surface-2); box-shadow: none; }
+
+  /* ---------- Carrusel de Inicio (Alimentación / Descanso / Hábitos) ---------- */
+.carousel { display: flex; align-items: flex-start; gap: var(--s3); overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; -webkit-overflow-scrolling: touch; transition: height .25s ease; }
+.carousel::-webkit-scrollbar { display: none; }
+.slide { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; }
+.macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); }
+.macros .card { padding: var(--s3); }
+.macro-val { display: block; margin: var(--s1) 0; font: 800 1.15rem var(--font); color: var(--ember); font-variant-numeric: tabular-nums; }
 }
