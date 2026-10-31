@@ -185,7 +185,18 @@ export async function parseExcelFile(file) {
     }
     return opt(r.v[field]);
   };
-
+  
+  // Avisa de columnas que la app no reconoce (suelen ser erratas en el título)
+  for (const kind of ['plan', 'sessions', 'exercises', 'habits']) {
+    const name = find(kind);
+    if (!name) continue;
+    const known = new Set(Object.values(COLUMNS[kind]).flat());
+    for (const h of firstHeader(XLSX, wb.Sheets[name])) {
+      if (text(h) && !known.has(key(h))) {
+        result.warnings.push(`Hoja «${name}»: la columna «${text(h)}» no se reconoce y se ignorará.`);
+      }
+    }
+  }
   // La plantilla antigua tenía la columna Ejercicio dentro de la hoja Sesiones
   const sName = find('sessions');
   if (sName) {
